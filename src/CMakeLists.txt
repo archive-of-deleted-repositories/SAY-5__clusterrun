@@ -16,6 +16,8 @@ target_link_libraries(clusterrun_transport PUBLIC clusterrun_core CURL::libcurl)
 add_library(clusterrun_controller_lib
   controller/match.cpp
   controller/scheduler.cpp
+  controller/heartbeat.cpp
+  controller/controller.cpp
 )
 target_link_libraries(clusterrun_controller_lib PUBLIC clusterrun_core)
 
