@@ -1,0 +1,15 @@
+build/
+build-*/
+*.o
+*.a
+*.so
+*.dylib
+.DS_Store
+compile_commands.json
+.cache/
+cmake-build-*/
+fuzz-corpus/
+crash-*
+*.profraw
+*.profdata
+coverage/
