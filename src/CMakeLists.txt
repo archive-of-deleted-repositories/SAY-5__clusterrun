@@ -18,3 +18,9 @@ add_library(clusterrun_controller_lib
   controller/scheduler.cpp
 )
 target_link_libraries(clusterrun_controller_lib PUBLIC clusterrun_core)
+
+add_library(clusterrun_worker_lib
+  worker/exec.cpp
+  worker/worker.cpp
+)
+target_link_libraries(clusterrun_worker_lib PUBLIC clusterrun_core clusterrun_transport)
