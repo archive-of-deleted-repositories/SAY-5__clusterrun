@@ -27,6 +27,10 @@ seconds to hours and checkpointing is load-bearing.
   default build talks to LocalStack over its REST API through a small libcurl
   client, which keeps continuous integration hermetic and fast. The same
   interface can be backed by the AWS SDK for C++ for real deployments.
+- **Checkpointing** lets long jobs persist progress to object storage every
+  `checkpoint_interval_s`. On a mid-run loss the controller redrives the job to a
+  new worker with `resume_from_checkpoint_s3`, so work since the last checkpoint
+  is all that repeats. See [docs/checkpointing.md](docs/checkpointing.md).
 
 ## Job descriptor
 

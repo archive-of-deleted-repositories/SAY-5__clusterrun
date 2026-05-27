@@ -28,6 +28,8 @@ add_library(clusterrun_worker_lib
   worker/exec.cpp
   worker/worker.cpp
   worker/runtime.cpp
+  worker/checkpoint.cpp
+  worker/checkpointed_run.cpp
 )
 target_link_libraries(clusterrun_worker_lib PUBLIC clusterrun_core clusterrun_transport)
 
