@@ -1,0 +1,168 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_ENDPOINT_URL: http://localhost:4566
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_DEFAULT_REGION: us-east-1
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
+      - name: Check formatting
+        run: |
+          find src tests bench fuzz \( -name '*.cpp' -o -name '*.hpp' \) -print0 \
+            | xargs -0 -r clang-format-18 --dry-run --Werror
+
+  build-gcc:
+    runs-on: ubuntu-24.04
+    services:
+      localstack:
+        image: localstack/localstack:3.5
+        ports: ["4566:4566"]
+        env:
+          SERVICES: sqs,s3
+        options: >-
+          --health-cmd "curl -sf http://localhost:4566/_localstack/health"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake libcurl4-openssl-dev nlohmann-json3-dev \
+            libgtest-dev libgmock-dev awscli
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: Test
+        env:
+          CLUSTERRUN_LIVE: "1"
+        run: ctest --test-dir build --output-on-failure
+
+  build-clang:
+    runs-on: ubuntu-24.04
+    services:
+      localstack:
+        image: localstack/localstack:3.5
+        ports: ["4566:4566"]
+        env:
+          SERVICES: sqs,s3
+        options: >-
+          --health-cmd "curl -sf http://localhost:4566/_localstack/health"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libcurl4-openssl-dev nlohmann-json3-dev \
+            libgtest-dev libgmock-dev awscli
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: Test
+        env:
+          CLUSTERRUN_LIVE: "1"
+        run: ctest --test-dir build --output-on-failure
+
+  asan-ubsan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libcurl4-openssl-dev nlohmann-json3-dev \
+            libgtest-dev libgmock-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_CXX_COMPILER=clang++ -DCLUSTERRUN_ASAN=ON
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: Test (sanitized, transport skipped)
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+        run: ctest --test-dir build --output-on-failure
+
+  tsan-stress:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libcurl4-openssl-dev nlohmann-json3-dev \
+            libgtest-dev libgmock-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_CXX_COMPILER=clang++ -DCLUSTERRUN_TSAN=ON
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: Stress the integration test under TSan
+        run: ctest --test-dir build --output-on-failure -R test_integration --repeat until-fail:5
+
+  fuzz-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libcurl4-openssl-dev nlohmann-json3-dev \
+            libgtest-dev libgmock-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_CXX_COMPILER=clang++ -DCLUSTERRUN_BUILD_FUZZ=ON
+      - name: Build fuzz targets if present
+        run: |
+          if cmake --build build --target fuzz_job_codec -j"$(nproc)" 2>/dev/null; then
+            echo "running fuzz smoke"
+            ./build/fuzz/fuzz_job_codec -runs=5000 -max_total_time=30
+          else
+            echo "no fuzz targets yet (added in v1)"
+          fi
+
+  bench-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake libcurl4-openssl-dev nlohmann-json3-dev \
+            libgtest-dev libgmock-dev
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: Run bench smoke if present
+        run: |
+          if cmake --build build --target bench_throughput -j"$(nproc)" 2>/dev/null; then
+            JOBS=50 ./build/bench/bench_throughput
+          else
+            echo "no bench targets yet (added in v2)"
+          fi
+
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: clusterrun:ci
