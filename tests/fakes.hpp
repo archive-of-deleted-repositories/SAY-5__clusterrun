@@ -1,82 +1,12 @@
 #pragma once
 
-#include <deque>
-#include <map>
-#include <mutex>
-#include <set>
-#include <string>
-#include <vector>
-
-#include "transport/transport.hpp"
+#include "transport/memory.hpp"
 
 namespace clusterrun {
 
-// In-memory ObjectStore for tests: thread-safe so the integration test can share
-// one store across worker threads.
-class FakeObjectStore : public ObjectStore {
- public:
-  bool ensure_bucket(const std::string& bucket) override {
-    std::lock_guard<std::mutex> lk(m_);
-    buckets_.insert(bucket);
-    return true;
-  }
-  bool put(const std::string& bucket, const std::string& key, const std::string& body) override {
-    std::lock_guard<std::mutex> lk(m_);
-    blobs_[bucket + "/" + key] = body;
-    return true;
-  }
-  std::optional<std::string> get(const std::string& bucket, const std::string& key) override {
-    std::lock_guard<std::mutex> lk(m_);
-    auto it = blobs_.find(bucket + "/" + key);
-    if (it == blobs_.end()) {
-      return std::nullopt;
-    }
-    return it->second;
-  }
-  std::size_t object_count() {
-    std::lock_guard<std::mutex> lk(m_);
-    return blobs_.size();
-  }
-
- private:
-  std::mutex m_;
-  std::set<std::string> buckets_;
-  std::map<std::string, std::string> blobs_;
-};
-
-// In-memory queue for tests: at-least-once with explicit delete.
-class FakeQueue : public Queue {
- public:
-  std::string ensure_queue(const std::string& name) override {
-    std::lock_guard<std::mutex> lk(m_);
-    queues_.try_emplace(name);
-    return name;
-  }
-  bool send(const std::string& url, const std::string& body) override {
-    std::lock_guard<std::mutex> lk(m_);
-    queues_[url].push_back(body);
-    return true;
-  }
-  std::vector<QueueMessage> receive(const std::string& url, int max_messages, int) override {
-    std::lock_guard<std::mutex> lk(m_);
-    std::vector<QueueMessage> out;
-    auto& q = queues_[url];
-    while (!q.empty() && static_cast<int>(out.size()) < max_messages) {
-      QueueMessage m;
-      m.body = q.front();
-      m.receipt = "r";
-      q.pop_front();
-      out.push_back(std::move(m));
-    }
-    return out;
-  }
-  bool remove(const std::string&, const std::string&) override {
-    return true;  // receive already pops in this fake
-  }
-
- private:
-  std::mutex m_;
-  std::map<std::string, std::deque<std::string>> queues_;
-};
+// Tests historically used these names; they alias the shared in-memory
+// transports so test and bench code share one implementation.
+using FakeObjectStore = MemoryObjectStore;
+using FakeQueue = MemoryQueue;
 
 }  // namespace clusterrun

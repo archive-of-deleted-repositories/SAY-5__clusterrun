@@ -143,13 +143,12 @@ jobs:
             libgtest-dev libgmock-dev
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-      - name: Run bench smoke if present
+      - name: Bench smoke and regression gate
         run: |
-          if cmake --build build --target bench_throughput -j"$(nproc)" 2>/dev/null; then
-            JOBS=50 ./build/bench/bench_throughput
-          else
-            echo "no bench targets yet (added in v2)"
-          fi
+          cmake --build build --target bench_throughput bench_fault_recovery -j"$(nproc)"
+          JOBS=50 WORKERS=3 ./build/bench/bench_throughput
+          JOBS=50 ./build/bench/bench_fault_recovery
+          JOBS=50 WORKERS=3 cmake --build build --target bench-regress
 
   coverage:
     runs-on: ubuntu-24.04
