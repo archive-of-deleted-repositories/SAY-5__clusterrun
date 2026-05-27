@@ -32,4 +32,11 @@ Status execute_job(const Job& job, WorkerId worker_id, ObjectStore& store, const
 // Builds a capability heartbeat JSON payload for this worker.
 std::string make_heartbeat(const Capability& cap);
 
+// One pass of the worker loop driven by a queue and object store: sends a
+// heartbeat, then claims and runs at most one job from its claim queue, sending
+// each status update as a base64 binary frame to the status queue. Returns true
+// if a job was run this pass. Defined in runtime.cpp.
+bool worker_step(const WorkerConfig& cfg, Queue& queue, ObjectStore& store,
+                 const std::string& claim_queue_url);
+
 }  // namespace clusterrun

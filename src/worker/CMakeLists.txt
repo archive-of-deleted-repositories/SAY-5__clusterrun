@@ -1,0 +1,2 @@
+add_executable(clusterrun_worker main.cpp)
+target_link_libraries(clusterrun_worker PRIVATE clusterrun_worker_lib)

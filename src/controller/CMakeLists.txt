@@ -1,0 +1,2 @@
+add_executable(clusterrun_controller main.cpp)
+target_link_libraries(clusterrun_controller PRIVATE clusterrun_controller_lib)
