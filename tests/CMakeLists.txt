@@ -7,7 +7,7 @@ endif()
 
 function(clusterrun_add_test name)
   add_executable(${name} ${ARGN})
-  target_link_libraries(${name} PRIVATE clusterrun_core)
+  target_link_libraries(${name} PRIVATE clusterrun_core clusterrun_transport)
   if(GTest_FOUND)
     target_link_libraries(${name} PRIVATE GTest::gtest GTest::gtest_main)
   else()
@@ -18,3 +18,4 @@ endfunction()
 
 clusterrun_add_test(test_smoke test_smoke.cpp)
 clusterrun_add_test(test_codec test_codec.cpp)
+clusterrun_add_test(test_transport test_transport.cpp)
