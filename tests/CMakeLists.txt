@@ -17,3 +17,4 @@ function(clusterrun_add_test name)
 endfunction()
 
 clusterrun_add_test(test_smoke test_smoke.cpp)
+clusterrun_add_test(test_codec test_codec.cpp)
