@@ -20,6 +20,7 @@ add_library(clusterrun_controller_lib
   controller/heartbeat.cpp
   controller/controller.cpp
   controller/runtime.cpp
+  controller/retry_classifier.cpp
 )
 target_link_libraries(clusterrun_controller_lib PUBLIC clusterrun_core clusterrun_transport)
 

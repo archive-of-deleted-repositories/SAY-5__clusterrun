@@ -151,6 +151,37 @@ jobs:
             echo "no bench targets yet (added in v2)"
           fi
 
+  coverage:
+    runs-on: ubuntu-24.04
+    services:
+      localstack:
+        image: localstack/localstack:3.5
+        ports: ["4566:4566"]
+        env:
+          SERVICES: sqs,s3
+        options: >-
+          --health-cmd "curl -sf http://localhost:4566/_localstack/health"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake libcurl4-openssl-dev nlohmann-json3-dev \
+            libgtest-dev libgmock-dev gcovr
+      - name: Configure with coverage
+        run: cmake -S . -B build -DCMAKE_CXX_COMPILER=g++ -DCLUSTERRUN_COVERAGE=ON
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: Test
+        env:
+          CLUSTERRUN_LIVE: "1"
+        run: ctest --test-dir build --output-on-failure
+      - name: Coverage gate
+        run: |
+          gcovr --root . --filter 'src/' --exclude 'src/.*/main\.cpp' \
+            --print-summary --fail-under-line 70 build
+
   docker:
     runs-on: ubuntu-24.04
     steps:
