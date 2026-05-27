@@ -17,6 +17,12 @@ seconds to hours and checkpointing is load-bearing.
   heartbeats, matches each job to an eligible worker, and watches for loss.
 - **Workers** claim jobs that match their capabilities, fork/exec the command,
   stream stdout/stderr to object storage, and emit status plus heartbeats.
+- **Node classes** let a worker declare where it lives and what shape of work it
+  is meant for: `aws`, `local`, `gpu`, or `cpu-heavy`. A job sets
+  `requires.node_class` to pin itself to a class, and `requires.features` to pin
+  specific hardware (for example `gpu`). A job whose class or features no live
+  worker satisfies waits in a pending-capability set with a `waiting_for` reason
+  rather than running on the wrong worker.
 - **Transports** wrap a queue (SQS-shaped) and an object store (S3-shaped). The
   default build talks to LocalStack over its REST API through a small libcurl
   client, which keeps continuous integration hermetic and fast. The same

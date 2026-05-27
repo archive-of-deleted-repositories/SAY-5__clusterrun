@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <string>
 #include <vector>
 
 #include "controller/heartbeat.hpp"
@@ -34,6 +36,12 @@ class Controller {
   // Produces the next batch of (worker, job) claims.
   std::vector<std::pair<WorkerId, Job>> assign() {
     return sched_.assign();
+  }
+
+  // Jobs blocked because no worker matches their requirements (for example a gpu
+  // job with no gpu worker), each with a human-readable waiting reason.
+  std::map<JobId, std::string> waiting_for() const {
+    return sched_.waiting_for();
   }
 
   // Reaps workers silent past the timeout, removes them from scheduling, and
