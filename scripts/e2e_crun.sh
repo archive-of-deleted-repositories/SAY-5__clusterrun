@@ -65,6 +65,26 @@ fi
 echo "queue after the run"
 "$CRUN" queue
 
+echo "stats after the run"
+"$CRUN" stats
+DONE=$(curl -sf "$CRUN_CONTROLLER/v1/stats" | grep -o '"done":[0-9]*' | cut -d: -f2)
+if [[ "$DONE" -lt 1 ]]; then
+  echo "stats disagree with the run: done=$DONE" >&2
+  exit 1
+fi
+
+echo "draining worker 1: a new job must stay unassigned"
+"$CRUN" drain-worker 1
+printf '{"job_id":5,"command":["sh","-c","echo never runs"],"attempts_max":1}' > "$TMP/drained.json"
+"$CRUN" submit "$TMP/drained.json"
+sleep 5
+STATE=$(curl -sf "$CRUN_CONTROLLER/v1/jobs/5" | grep -o '"state":"[a-z_]*"')
+if [[ "$STATE" == '"state":"succeeded"' || "$STATE" == '"state":"running"' || "$STATE" == '"state":"claimed"' ]]; then
+  echo "drained worker still took new work: $STATE" >&2
+  exit 1
+fi
+echo "job 5 held back as expected: $STATE"
+
 echo "restarting on the local filesystem backend"
 kill "$CTRL_PID" "$WORKER_PID" 2>/dev/null || true
 wait "$CTRL_PID" "$WORKER_PID" 2>/dev/null || true

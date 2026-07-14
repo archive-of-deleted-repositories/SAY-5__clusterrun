@@ -75,6 +75,39 @@ docker compose up -d localstack
 export AWS_ENDPOINT_URL=http://localhost:4566
 ```
 
+## crun
+
+`cli/` holds `crun`, a stdlib-only Go client for the controller's HTTP control
+endpoint (see [PROTOCOL.md](PROTOCOL.md)): `submit`, `watch`, `queue`, `fetch`,
+`stats`, and `drain-worker`. Watch exits with a code derived from the failure
+category so scripts can branch on why a job died.
+
+```sh
+cd cli && go build -o crun .
+./crun submit job.json --priority high --wait
+./crun fetch 42 --output result.bin
+```
+
+## Releases
+
+- **v1.0.0** - controller, workers, SQS/S3-shaped transports over LocalStack,
+  capability matching with node classes, retries with a structured error
+  taxonomy, mid-job checkpointing with resume on a different worker, and the
+  HTTP control endpoint.
+- **v2.0.0** - the `crun` Go client speaking the control protocol, exit codes
+  by failure category, cross-language codec goldens, and an end-to-end CI job
+  driving a real controller and worker through `crun`.
+- **v3.0.0** - high/normal/low priorities and per-tenant fair queues: higher
+  bands drain first, tenants inside a band take turns, and `crun queue` shows
+  per-priority depth.
+- **v4.0.0** - checksummed result artifacts: jobs write to
+  `CLUSTERRUN_RESULT_FILE`, workers upload with a sha256, and `crun fetch`
+  downloads and verifies, on both the S3-shaped and shared-filesystem
+  backends.
+- **v5.0.0** - observability and drain: `crun stats` reports throughput,
+  retries by category, and p50/p95 latency; `crun drain-worker` lets a worker
+  finish its current job while the scheduler routes everything new elsewhere.
+
 ## License
 
 MIT.

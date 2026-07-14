@@ -3,7 +3,7 @@
 namespace clusterrun {
 
 const char* version() {
-  return "4.0.0";
+  return "5.0.0";
 }
 
 }  // namespace clusterrun
