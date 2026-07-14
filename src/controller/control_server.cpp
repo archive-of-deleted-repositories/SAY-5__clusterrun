@@ -193,6 +193,45 @@ ControlResponse ControlServer::route(const std::string& method, const std::strin
     return {200, j.dump()};
   }
 
+  if (path == "/v1/stats" && method == "GET") {
+    SchedulerStats s = ctrl_.scheduler().stats();
+    json j;
+    j["submitted"] = s.submitted;
+    j["done"] = s.done;
+    j["dead_lettered"] = s.dead_lettered;
+    j["pending"] = ctrl_.scheduler().pending_count();
+    j["in_flight"] = ctrl_.scheduler().in_flight_count();
+    json retries = json::object();
+    for (const auto& [category, count] : s.retries_by_category) {
+      retries[category] = count;
+    }
+    j["retries_by_category"] = retries;
+    j["latency_p50_us"] = s.latency_p50_us;
+    j["latency_p95_us"] = s.latency_p95_us;
+    j["throughput_per_s"] = s.throughput_per_s;
+    return {200, j.dump()};
+  }
+
+  const std::string workers_prefix = "/v1/workers/";
+  const std::string drain_suffix = "/drain";
+  if (path.rfind(workers_prefix, 0) == 0 && method == "POST" &&
+      path.size() > workers_prefix.size() + drain_suffix.size() &&
+      path.compare(path.size() - drain_suffix.size(), drain_suffix.size(), drain_suffix) == 0) {
+    std::string id_str = path.substr(workers_prefix.size(),
+                                     path.size() - workers_prefix.size() - drain_suffix.size());
+    if (id_str.empty() || id_str.find_first_not_of("0123456789") != std::string::npos) {
+      return err(400, "bad worker id");
+    }
+    WorkerId id = static_cast<WorkerId>(std::strtoul(id_str.c_str(), nullptr, 10));
+    if (!ctrl_.scheduler().drain_worker(id)) {
+      return err(404, "unknown worker");
+    }
+    json j;
+    j["worker_id"] = id;
+    j["draining"] = true;
+    return {200, j.dump()};
+  }
+
   if (path == "/v1/queue" && method == "GET") {
     const Scheduler& sched = ctrl_.scheduler();
     json j;
