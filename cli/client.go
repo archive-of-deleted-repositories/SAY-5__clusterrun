@@ -42,14 +42,16 @@ func (e *apiError) Error() string {
 }
 
 type jobStatus struct {
-	JobID       uint64  `json:"job_id"`
-	State       string  `json:"state"`
-	Attempts    uint32  `json:"attempts"`
-	AttemptsMax uint32  `json:"attempts_max"`
-	WorkerID    *uint32 `json:"worker_id"`
-	Detail      string  `json:"detail"`
-	Category    string  `json:"category"`
-	Checkpoint  string  `json:"checkpoint"`
+	JobID          uint64  `json:"job_id"`
+	State          string  `json:"state"`
+	Attempts       uint32  `json:"attempts"`
+	AttemptsMax    uint32  `json:"attempts_max"`
+	WorkerID       *uint32 `json:"worker_id"`
+	Detail         string  `json:"detail"`
+	Category       string  `json:"category"`
+	Checkpoint     string  `json:"checkpoint"`
+	Artifact       string  `json:"artifact"`
+	ArtifactSha256 string  `json:"artifact_sha256"`
 }
 
 type queueDepths struct {
