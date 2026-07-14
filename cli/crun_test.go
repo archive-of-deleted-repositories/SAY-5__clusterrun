@@ -77,6 +77,18 @@ func (s *stubController) handler() http.Handler {
 		}
 		fmt.Fprintf(w, `{"job_id": %v, "state": "pending"}`, spec["job_id"])
 	})
+	mux.HandleFunc("GET /v1/stats", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"submitted": 10, "done": 7, "dead_lettered": 1, "pending": 2, "in_flight": 0,
+		                "retries_by_category": {"preempted": 2, "lost": 1},
+		                "latency_p50_us": 250000, "latency_p95_us": 1200000, "throughput_per_s": 3.5}`)
+	})
+	mux.HandleFunc("POST /v1/workers/7/drain", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"worker_id": 7, "draining": true}`)
+	})
+	mux.HandleFunc("POST /v1/workers/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"error": "unknown worker"}`)
+	})
 	mux.HandleFunc("GET /v1/queue", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"pending": 3, "pending_by_priority": {"high": 1, "normal": 2, "low": 0},
 		                "in_flight": 2, "done": 40, "dead_lettered": 1,
@@ -227,6 +239,36 @@ func TestFetchRejectsCorruptedArtifact(t *testing.T) {
 	}
 	if _, err := os.Stat(out); err == nil {
 		t.Fatal("corrupted artifact must not be written")
+	}
+}
+
+func TestStatsParsing(t *testing.T) {
+	_, c := newStub(t, jobStatus{})
+	s, err := c.stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Submitted != 10 || s.Done != 7 || s.DeadLettered != 1 {
+		t.Fatalf("bad counters: %+v", s)
+	}
+	if s.RetriesByCategory["preempted"] != 2 || s.RetriesByCategory["lost"] != 1 {
+		t.Fatalf("bad retry map: %+v", s.RetriesByCategory)
+	}
+	if s.LatencyP50Us != 250000 || s.LatencyP95Us != 1200000 || s.ThroughputPerS != 3.5 {
+		t.Fatalf("bad latency fields: %+v", s)
+	}
+}
+
+func TestDrainWorker(t *testing.T) {
+	_, c := newStub(t, jobStatus{})
+	if code := cmdDrainWorker([]string{"7", "--controller", c.base}); code != 0 {
+		t.Fatalf("drain of a known worker = %d, want 0", code)
+	}
+	if code := cmdDrainWorker([]string{"9", "--controller", c.base}); code != exitUsage {
+		t.Fatalf("drain of an unknown worker = %d, want %d", code, exitUsage)
+	}
+	if code := cmdDrainWorker([]string{"not-a-number"}); code != exitUsage {
+		t.Fatalf("drain with a bad id = %d, want %d", code, exitUsage)
 	}
 }
 
