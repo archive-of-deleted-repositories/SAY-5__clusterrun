@@ -53,11 +53,12 @@ type jobStatus struct {
 }
 
 type queueDepths struct {
-	Pending      int               `json:"pending"`
-	InFlight     int               `json:"in_flight"`
-	Done         int               `json:"done"`
-	DeadLettered int               `json:"dead_lettered"`
-	Waiting      map[string]string `json:"waiting"`
+	Pending           int               `json:"pending"`
+	PendingByPriority map[string]int    `json:"pending_by_priority"`
+	InFlight          int               `json:"in_flight"`
+	Done              int               `json:"done"`
+	DeadLettered      int               `json:"dead_lettered"`
+	Waiting           map[string]string `json:"waiting"`
 }
 
 type submitReply struct {

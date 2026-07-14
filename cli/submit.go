@@ -31,6 +31,8 @@ func cmdSubmit(args []string) int {
 	controller := fs.String("controller", "", "controller base URL")
 	backend := fs.String("backend", "", "pin the job to a backend: aws or local")
 	maxRetries := fs.Int("max-retries", -1, "retries after the first attempt")
+	priority := fs.String("priority", "", "dispatch priority: high, normal, or low")
+	tenant := fs.String("tenant", "", "fair-share tenant bucket")
 	timeout := fs.Int("timeout", 0, "seconds to wait for the job with --wait (0 = no limit)")
 	wait := fs.Bool("wait", false, "watch the job to its terminal state after submitting")
 
@@ -39,11 +41,15 @@ func cmdSubmit(args []string) int {
 		return exitUsage
 	}
 	if len(pos) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: crun submit <jobspec.json> [--backend aws|local] [--max-retries N] [--timeout S] [--wait]")
+		fmt.Fprintln(os.Stderr, "usage: crun submit <jobspec.json> [--backend aws|local] [--priority high|normal|low] [--tenant T] [--max-retries N] [--timeout S] [--wait]")
 		return exitUsage
 	}
 	if *backend != "" && *backend != "aws" && *backend != "local" {
 		fmt.Fprintf(os.Stderr, "crun: bad --backend %q (want aws or local)\n", *backend)
+		return exitUsage
+	}
+	if *priority != "" && *priority != "high" && *priority != "normal" && *priority != "low" {
+		fmt.Fprintf(os.Stderr, "crun: bad --priority %q (want high, normal, or low)\n", *priority)
 		return exitUsage
 	}
 
@@ -52,7 +58,7 @@ func cmdSubmit(args []string) int {
 		fmt.Fprintf(os.Stderr, "crun: %v\n", err)
 		return exitUsage
 	}
-	spec, err := applyOverrides(raw, *backend, *maxRetries)
+	spec, err := applyOverrides(raw, *backend, *maxRetries, *priority, *tenant)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "crun: %v\n", err)
 		return exitUsage
@@ -77,10 +83,10 @@ func cmdSubmit(args []string) int {
 }
 
 // applyOverrides folds the submit flags into the jobspec: --backend sets
-// requires.node_class and --max-retries N sets attempts_max to N+1 (the
-// first attempt plus N retries).
-func applyOverrides(raw []byte, backend string, maxRetries int) ([]byte, error) {
-	if backend == "" && maxRetries < 0 {
+// requires.node_class, --max-retries N sets attempts_max to N+1 (the first
+// attempt plus N retries), and --priority and --tenant set their fields.
+func applyOverrides(raw []byte, backend string, maxRetries int, priority, tenant string) ([]byte, error) {
+	if backend == "" && maxRetries < 0 && priority == "" && tenant == "" {
 		return raw, nil
 	}
 	var spec map[string]json.RawMessage
@@ -107,6 +113,14 @@ func applyOverrides(raw []byte, backend string, maxRetries int) ([]byte, error) 
 	if maxRetries >= 0 {
 		am, _ := json.Marshal(maxRetries + 1)
 		spec["attempts_max"] = am
+	}
+	if priority != "" {
+		p, _ := json.Marshal(priority)
+		spec["priority"] = p
+	}
+	if tenant != "" {
+		tn, _ := json.Marshal(tenant)
+		spec["tenant"] = tn
 	}
 	return json.Marshal(spec)
 }

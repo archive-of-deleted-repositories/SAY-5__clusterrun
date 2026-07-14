@@ -22,7 +22,12 @@ func cmdQueue(args []string) int {
 		fmt.Fprintf(os.Stderr, "crun: %v\n", err)
 		return exitTransport
 	}
-	fmt.Printf("pending        %d\n", q.Pending)
+	fmt.Printf("pending        %d", q.Pending)
+	if len(q.PendingByPriority) > 0 {
+		fmt.Printf(" (high %d, normal %d, low %d)",
+			q.PendingByPriority["high"], q.PendingByPriority["normal"], q.PendingByPriority["low"])
+	}
+	fmt.Println()
 	fmt.Printf("in_flight      %d\n", q.InFlight)
 	fmt.Printf("done           %d\n", q.Done)
 	fmt.Printf("dead_lettered  %d\n", q.DeadLettered)

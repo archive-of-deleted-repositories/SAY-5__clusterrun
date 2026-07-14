@@ -61,7 +61,8 @@ func (s *stubController) handler() http.Handler {
 		fmt.Fprintf(w, `{"job_id": %v, "state": "pending"}`, spec["job_id"])
 	})
 	mux.HandleFunc("GET /v1/queue", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"pending": 3, "in_flight": 2, "done": 40, "dead_lettered": 1,
+		fmt.Fprint(w, `{"pending": 3, "pending_by_priority": {"high": 1, "normal": 2, "low": 0},
+		                "in_flight": 2, "done": 40, "dead_lettered": 1,
 		                "waiting": {"9": "no worker satisfies feature:gpu"}}`)
 	})
 	return mux
@@ -111,6 +112,9 @@ func TestQueueParsing(t *testing.T) {
 	}
 	if q.Waiting["9"] != "no worker satisfies feature:gpu" {
 		t.Fatalf("bad waiting map: %+v", q.Waiting)
+	}
+	if q.PendingByPriority["high"] != 1 || q.PendingByPriority["normal"] != 2 {
+		t.Fatalf("bad per-priority depths: %+v", q.PendingByPriority)
 	}
 }
 
@@ -174,7 +178,7 @@ func TestTransportErrorExitsThree(t *testing.T) {
 }
 
 func TestApplyOverrides(t *testing.T) {
-	out, err := applyOverrides([]byte(`{"job_id": 1, "command": ["true"]}`), "aws", 2)
+	out, err := applyOverrides([]byte(`{"job_id": 1, "command": ["true"]}`), "aws", 2, "high", "acme")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,10 +192,13 @@ func TestApplyOverrides(t *testing.T) {
 	if spec.AttemptsMax != 3 {
 		t.Fatalf("max-retries 2 should give attempts_max 3, got %d", spec.AttemptsMax)
 	}
+	if spec.Priority != "high" || spec.Tenant != "acme" {
+		t.Fatalf("priority overrides lost: %s", out)
+	}
 
 	// No flags means the spec passes through untouched.
 	raw := []byte(`{"job_id": 1}`)
-	same, err := applyOverrides(raw, "", -1)
+	same, err := applyOverrides(raw, "", -1, "", "")
 	if err != nil || string(same) != string(raw) {
 		t.Fatalf("passthrough changed the spec: %s", same)
 	}
