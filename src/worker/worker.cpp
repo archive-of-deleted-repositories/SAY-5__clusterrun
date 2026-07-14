@@ -1,9 +1,15 @@
 #include "worker/worker.hpp"
 
+#include <unistd.h>
+
 #include <chrono>
 #include <csignal>
+#include <cstdio>
+#include <fstream>
+#include <sstream>
 
 #include "core/job_codec.hpp"
+#include "core/sha256.hpp"
 #include "transport/localstack.hpp"
 #include "worker/exec.hpp"
 
@@ -54,7 +60,16 @@ Status execute_job(const Job& job, WorkerId worker_id, ObjectStore& store, const
   sink(make_update(job, worker_id, Status::kClaimed, 0, ""));
   sink(make_update(job, worker_id, Status::kRunning, 0, ""));
 
-  ExecResult r = run_process(job.command, extra_env);
+  // Jobs with a result destination get a scratch path to write their artifact.
+  std::vector<std::string> env = extra_env;
+  std::string result_path;
+  if (!job.result_s3.empty()) {
+    result_path =
+        "/tmp/clusterrun-result-" + std::to_string(job.job_id) + "-" + std::to_string(::getpid());
+    env.push_back("CLUSTERRUN_RESULT_FILE=" + result_path);
+  }
+
+  ExecResult r = run_process(job.command, env);
   if (!r.spawned) {
     sink(make_update(job, worker_id, Status::kFailed, 0, "spawn-failure: fork/exec failed"));
     return Status::kFailed;
@@ -81,7 +96,30 @@ Status execute_job(const Job& job, WorkerId worker_id, ObjectStore& store, const
     sink(make_update(job, worker_id, Status::kFailed, 0, "upload-failure: output upload failed"));
     return Status::kFailed;
   }
-  sink(make_update(job, worker_id, Status::kSucceeded, 100, ""));
+
+  // Upload the checksummed result artifact, if the job declared one. The
+  // sha256 travels in the success detail so the controller can serve it to
+  // clients for download verification.
+  std::string success_detail;
+  if (!job.result_s3.empty()) {
+    std::ifstream in(result_path, std::ios::binary);
+    if (!in.good()) {
+      sink(make_update(job, worker_id, Status::kFailed, 0,
+                       "upload-failure: result file not produced"));
+      return Status::kFailed;
+    }
+    std::ostringstream data;
+    data << in.rdbuf();
+    in.close();
+    std::remove(result_path.c_str());
+    if (!put_to_uri(store, job.result_s3, data.str())) {
+      sink(make_update(job, worker_id, Status::kFailed, 0,
+                       "upload-failure: result artifact upload failed"));
+      return Status::kFailed;
+    }
+    success_detail = "result: " + job.result_s3 + " sha256:" + sha256_hex(data.str());
+  }
+  sink(make_update(job, worker_id, Status::kSucceeded, 100, success_detail));
   return Status::kSucceeded;
 }
 
