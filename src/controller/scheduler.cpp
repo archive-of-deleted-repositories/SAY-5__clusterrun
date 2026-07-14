@@ -6,14 +6,48 @@
 
 namespace clusterrun {
 
+void Scheduler::push_pending(JobId id) {
+  auto it = jobs_.find(id);
+  if (it == jobs_.end()) {
+    return;
+  }
+  const Job& job = it->second.job;
+  Band& band = pending_[static_cast<std::size_t>(job.priority)];
+  std::deque<JobId>& q = band.by_tenant[job.tenant];
+  if (q.empty()) {
+    band.rotation.push_back(job.tenant);
+  }
+  q.push_back(id);
+  ++band.size;
+}
+
+std::optional<JobId> Scheduler::pop_fair(Band& band) {
+  if (band.rotation.empty()) {
+    return std::nullopt;
+  }
+  std::string tenant = band.rotation.front();
+  band.rotation.pop_front();
+  std::deque<JobId>& q = band.by_tenant[tenant];
+  JobId id = q.front();
+  q.pop_front();
+  --band.size;
+  if (q.empty()) {
+    band.by_tenant.erase(tenant);
+  } else {
+    band.rotation.push_back(tenant);  // next turn goes to the other tenants
+  }
+  return id;
+}
+
 void Scheduler::upsert_worker(const Capability& cap) {
   workers_[cap.worker_id] = cap;
   // A newly arrived or refreshed worker may satisfy capability-blocked jobs.
   if (!pending_capability_.empty()) {
-    for (JobId id : pending_capability_) {
-      pending_.push_back(id);
+    std::vector<JobId> blocked;
+    blocked.swap(pending_capability_);
+    for (JobId id : blocked) {
+      push_pending(id);
     }
-    pending_capability_.clear();
   }
 }
 
@@ -24,7 +58,7 @@ void Scheduler::remove_worker(WorkerId id) {
     if (st.assigned_to == id && st.last_status != Status::kSucceeded) {
       st.assigned_to.reset();
       st.last_detail = "lost: worker went silent";
-      pending_.push_back(jid);
+      push_pending(jid);
     }
   }
 }
@@ -33,7 +67,7 @@ void Scheduler::submit(const Job& job) {
   JobState st;
   st.job = job;
   jobs_[job.job_id] = st;
-  pending_.push_back(job.job_id);
+  push_pending(job.job_id);
 }
 
 std::size_t Scheduler::outstanding_for(WorkerId id) const {
@@ -81,31 +115,32 @@ std::string Scheduler::describe_gap(const Requirements& reqs) const {
 
 std::vector<std::pair<WorkerId, Job>> Scheduler::assign() {
   std::vector<std::pair<WorkerId, Job>> claims;
-  while (!pending_.empty()) {
-    JobId id = pending_.front();
-    pending_.pop_front();
-    auto it = jobs_.find(id);
-    if (it == jobs_.end()) {
-      continue;
+  // High priority drains completely before normal, and normal before low.
+  for (int band = 2; band >= 0; --band) {
+    while (auto id = pop_fair(pending_[static_cast<std::size_t>(band)])) {
+      auto it = jobs_.find(*id);
+      if (it == jobs_.end()) {
+        continue;
+      }
+      JobState& st = it->second;
+      if (st.assigned_to.has_value()) {
+        continue;  // already running somewhere
+      }
+      auto worker = pick_worker(st.job.reqs);
+      if (!worker.has_value()) {
+        pending_capability_.push_back(*id);
+        continue;
+      }
+      st.assigned_to = worker;
+      st.attempts += 1;
+      st.last_status = Status::kClaimed;
+      // Carry the latest checkpoint forward so a resuming worker can use it.
+      Job dispatched = st.job;
+      if (!st.latest_checkpoint_s3.empty()) {
+        dispatched.resume_from_checkpoint_s3 = st.latest_checkpoint_s3;
+      }
+      claims.emplace_back(*worker, dispatched);
     }
-    JobState& st = it->second;
-    if (st.assigned_to.has_value()) {
-      continue;  // already running somewhere
-    }
-    auto worker = pick_worker(st.job.reqs);
-    if (!worker.has_value()) {
-      pending_capability_.push_back(id);
-      continue;
-    }
-    st.assigned_to = worker;
-    st.attempts += 1;
-    st.last_status = Status::kClaimed;
-    // Carry the latest checkpoint forward so a resuming worker can use it.
-    Job dispatched = st.job;
-    if (!st.latest_checkpoint_s3.empty()) {
-      dispatched.resume_from_checkpoint_s3 = st.latest_checkpoint_s3;
-    }
-    claims.emplace_back(*worker, dispatched);
   }
   return claims;
 }
@@ -136,7 +171,7 @@ JobOutcome Scheduler::on_status(const StatusUpdate& u) {
       st.assigned_to.reset();
       st.last_detail = u.detail.empty() ? "lost: worker went silent" : u.detail;
       if (st.attempts < st.job.attempts_max) {
-        pending_.push_back(u.job_id);
+        push_pending(u.job_id);
         return JobOutcome::kRedriven;
       }
       ++dlq_;
@@ -156,6 +191,10 @@ std::map<JobId, std::string> Scheduler::waiting_for() const {
     }
   }
   return out;
+}
+
+std::size_t Scheduler::pending_count() const {
+  return pending_[0].size + pending_[1].size + pending_[2].size;
 }
 
 std::size_t Scheduler::in_flight_count() const {

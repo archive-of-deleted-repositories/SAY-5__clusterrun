@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -33,10 +34,12 @@ struct JobState {
 // can be unit and property tested directly. The controller loop drives it with
 // queue and heartbeat events.
 //
-// Scheduling policy: a pending job is assigned to the eligible worker with the
-// fewest outstanding claims; ties break by ascending worker id (round-robin
-// fairness). A job whose requirements no eligible worker can satisfy stays in
-// pending_capability until a matching worker registers.
+// Scheduling policy: pending jobs dispatch strictly by priority band (high
+// before normal before low). Within a band, tenants take turns in round-robin
+// order so one tenant's burst cannot starve another. The chosen job goes to
+// the eligible worker with the fewest outstanding claims; ties break by
+// ascending worker id. A job whose requirements no eligible worker can satisfy
+// stays in pending_capability until a matching worker registers.
 class Scheduler {
  public:
   // Registers or refreshes a worker's advertised capability.
@@ -61,8 +64,10 @@ class Scheduler {
   // paired with a human-readable reason.
   std::map<JobId, std::string> waiting_for() const;
 
-  std::size_t pending_count() const {
-    return pending_.size();
+  std::size_t pending_count() const;
+  // Pending jobs queued in one priority band.
+  std::size_t pending_count(Priority p) const {
+    return pending_[static_cast<std::size_t>(p)].size;
   }
   std::size_t in_flight_count() const;
   std::size_t done_count() const {
@@ -79,6 +84,19 @@ class Scheduler {
   const JobState* job_state(JobId id) const;
 
  private:
+  // One priority band: a queue per tenant plus the round-robin turn order.
+  // Invariant: a tenant is in rotation exactly once iff its queue is non-empty.
+  struct Band {
+    std::map<std::string, std::deque<JobId>> by_tenant;
+    std::deque<std::string> rotation;
+    std::size_t size = 0;
+  };
+
+  // Queues a job into its priority band and tenant queue.
+  void push_pending(JobId id);
+  // Pops the next job of a band in fair rotation order; nullopt when empty.
+  static std::optional<JobId> pop_fair(Band& band);
+
   // Counts how many jobs a worker currently holds.
   std::size_t outstanding_for(WorkerId id) const;
   // Picks the eligible worker with the fewest claims, ties by worker id.
@@ -88,7 +106,7 @@ class Scheduler {
 
   std::map<WorkerId, Capability> workers_;
   std::map<JobId, JobState> jobs_;
-  std::deque<JobId> pending_;              // ready to assign
+  std::array<Band, 3> pending_;            // ready to assign, indexed by Priority
   std::vector<JobId> pending_capability_;  // no matching worker yet
   std::size_t done_ = 0;
   std::size_t dlq_ = 0;
