@@ -83,6 +83,40 @@ Queue depths.
 }
 ```
 
+### `GET /v1/stats`
+
+Aggregated run counters for `crun stats`.
+
+```json
+{
+  "submitted": 10,
+  "done": 7,
+  "dead_lettered": 1,
+  "pending": 2,
+  "in_flight": 0,
+  "retries_by_category": {"preempted": 2, "lost": 1},
+  "latency_p50_us": 250000,
+  "latency_p95_us": 1200000,
+  "throughput_per_s": 3.5
+}
+```
+
+Latency is claim-to-success on the worker's clock, percentiles by nearest
+rank. Throughput is completions divided by the span from the first claim to
+the most recent success.
+
+### `POST /v1/workers/{id}/drain`
+
+Marks a worker as draining: it finishes whatever it is currently running but
+the scheduler assigns it nothing new. Jobs that only this worker could satisfy
+wait with a `waiting_for` reason. Draining survives subsequent heartbeats and
+clears if the worker is reaped and re-registers. 404 for a worker that has
+never sent a heartbeat.
+
+```json
+{"worker_id": 7, "draining": true}
+```
+
 ## Priorities and fair queues
 
 A job descriptor may carry `"priority"` (`high`, `normal`, or `low`; the
