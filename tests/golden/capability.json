@@ -1,0 +1,1 @@
+{"cpu":16,"features":["avx2","gpu"],"mem_gb":64,"node_class":"aws","worker_id":7}

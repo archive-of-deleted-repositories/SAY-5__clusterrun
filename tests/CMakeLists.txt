@@ -30,3 +30,9 @@ clusterrun_add_test(test_retry_classifier test_retry_classifier.cpp)
 clusterrun_add_test(test_node_class test_node_class.cpp)
 clusterrun_add_test(test_checkpoint test_checkpoint.cpp)
 clusterrun_add_test(test_control_server test_control_server.cpp)
+clusterrun_add_test(test_codec_golden test_codec_golden.cpp)
+target_compile_definitions(test_codec_golden PRIVATE
+  CLUSTERRUN_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
+
+add_executable(codec_dump codec_dump.cpp)
+target_link_libraries(codec_dump PRIVATE clusterrun_core)
