@@ -9,6 +9,7 @@
 #include "controller/controller.hpp"
 #include "controller/runtime.hpp"
 #include "core/version.hpp"
+#include "transport/filesystem.hpp"
 #include "transport/localstack.hpp"
 
 namespace {
@@ -39,7 +40,16 @@ int main() {
   Controller ctrl;
   std::mutex mu;
 
-  ControlServer control(ctrl, mu, control_port());
+  // CLUSTERRUN_BACKEND picks where result artifacts live: "local" means the
+  // shared-filesystem store, anything else the S3-shaped store.
+  const char* backend = std::getenv("CLUSTERRUN_BACKEND");
+  LocalStackObjectStore s3_store;
+  FilesystemObjectStore fs_store;
+  ObjectStore* store = backend != nullptr && std::string(backend) == "local"
+                           ? static_cast<ObjectStore*>(&fs_store)
+                           : static_cast<ObjectStore*>(&s3_store);
+
+  ControlServer control(ctrl, mu, control_port(), store);
   if (!control.start()) {
     std::fprintf(stderr, "failed to bind control port %u\n", control_port());
     return 1;

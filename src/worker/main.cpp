@@ -6,6 +6,7 @@
 
 #include "controller/runtime.hpp"  // for QueueNames
 #include "core/version.hpp"
+#include "transport/filesystem.hpp"
 #include "transport/localstack.hpp"
 #include "worker/worker.hpp"
 
@@ -52,7 +53,13 @@ int main() {
   }
 
   LocalStackQueue queue;
-  LocalStackObjectStore store;
+  // CLUSTERRUN_BACKEND=local stores artifacts on a shared filesystem instead
+  // of the S3-shaped store; the controller must be started the same way.
+  LocalStackObjectStore s3_store;
+  FilesystemObjectStore fs_store;
+  ObjectStore& store = env_str("CLUSTERRUN_BACKEND", "aws") == "local"
+                           ? static_cast<ObjectStore&>(fs_store)
+                           : static_cast<ObjectStore&>(s3_store);
   cfg.status_queue_url = queue.ensure_queue(names.status);
   cfg.heartbeat_queue_url = queue.ensure_queue(names.heartbeat);
   std::string claim_url =
