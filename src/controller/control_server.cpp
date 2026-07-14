@@ -13,6 +13,7 @@
 #include "controller/retry_classifier.hpp"
 #include "core/job_codec.hpp"
 #include "core/version.hpp"
+#include "transport/localstack.hpp"
 
 namespace clusterrun {
 
@@ -36,10 +37,13 @@ const char* reason_phrase(int status) {
 }
 
 std::string frame(const ControlResponse& r) {
-  std::string out =
-      "HTTP/1.1 " + std::to_string(r.status) + " " + reason_phrase(r.status) +
-      "\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(r.body.size()) +
-      "\r\nConnection: close\r\n\r\n" + r.body;
+  std::string out = "HTTP/1.1 " + std::to_string(r.status) + " " + reason_phrase(r.status) +
+                    "\r\nContent-Type: " + r.content_type +
+                    "\r\nContent-Length: " + std::to_string(r.body.size());
+  if (!r.checksum.empty()) {
+    out += "\r\nX-Checksum-Sha256: " + r.checksum;
+  }
+  out += "\r\nConnection: close\r\n\r\n" + r.body;
   return out;
 }
 
@@ -88,8 +92,9 @@ bool parse_job_id(const std::string& path, std::size_t prefix_len, JobId* out) {
 
 }  // namespace
 
-ControlServer::ControlServer(Controller& ctrl, std::mutex& mu, std::uint16_t port)
-    : ctrl_(ctrl), mu_(mu), port_(port) {
+ControlServer::ControlServer(Controller& ctrl, std::mutex& mu, std::uint16_t port,
+                             ObjectStore* store)
+    : ctrl_(ctrl), mu_(mu), store_(store), port_(port) {
 }
 
 ControlServer::~ControlServer() {
@@ -124,13 +129,43 @@ ControlResponse ControlServer::route(const std::string& method, const std::strin
 
   const std::string jobs_prefix = "/v1/jobs/";
   if (path.rfind(jobs_prefix, 0) == 0 && method == "GET") {
+    const std::string result_suffix = "/result";
+    std::string id_path = path;
+    bool want_result = false;
+    if (path.size() > result_suffix.size() &&
+        path.compare(path.size() - result_suffix.size(), result_suffix.size(), result_suffix) ==
+            0) {
+      want_result = true;
+      id_path = path.substr(0, path.size() - result_suffix.size());
+    }
     JobId id = 0;
-    if (!parse_job_id(path, jobs_prefix.size(), &id)) {
+    if (!parse_job_id(id_path, jobs_prefix.size(), &id)) {
       return err(400, "bad job id");
     }
     const JobState* st = ctrl_.scheduler().job_state(id);
     if (st == nullptr) {
       return err(404, "unknown job");
+    }
+    if (want_result) {
+      if (st->result_uri.empty()) {
+        return err(404, "no result artifact for this job");
+      }
+      if (store_ == nullptr) {
+        return err(500, "no object store attached");
+      }
+      std::string bucket, key;
+      if (!parse_s3_uri(st->result_uri, &bucket, &key)) {
+        return err(500, "unparseable artifact uri");
+      }
+      auto body = store_->get(bucket, key);
+      if (!body.has_value()) {
+        return err(404, "artifact object missing");
+      }
+      ControlResponse r;
+      r.body = std::move(*body);
+      r.content_type = "application/octet-stream";
+      r.checksum = st->result_sha256;
+      return r;
     }
     json j;
     j["job_id"] = id;
@@ -150,6 +185,10 @@ ControlResponse ControlServer::route(const std::string& method, const std::strin
     }
     if (!st->latest_checkpoint_s3.empty()) {
       j["checkpoint"] = st->latest_checkpoint_s3;
+    }
+    if (!st->result_uri.empty()) {
+      j["artifact"] = st->result_uri;
+      j["artifact_sha256"] = st->result_sha256;
     }
     return {200, j.dump()};
   }
