@@ -36,3 +36,4 @@ target_compile_definitions(test_codec_golden PRIVATE
 
 add_executable(codec_dump codec_dump.cpp)
 target_link_libraries(codec_dump PRIVATE clusterrun_core)
+clusterrun_add_test(test_priority test_priority.cpp)
