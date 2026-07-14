@@ -1,8 +1,11 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <mutex>
 #include <thread>
 
+#include "controller/control_server.hpp"
 #include "controller/controller.hpp"
 #include "controller/runtime.hpp"
 #include "core/version.hpp"
@@ -16,10 +19,17 @@ std::uint64_t now_us() {
       duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count());
 }
 
+std::uint16_t control_port() {
+  const char* v = std::getenv("CLUSTERRUN_CONTROL_PORT");
+  return v != nullptr ? static_cast<std::uint16_t>(std::strtoul(v, nullptr, 10)) : 8447;
+}
+
 }  // namespace
 
 // Long-running controller against LocalStack. The deterministic logic lives in
-// controller_step; this is the thin driver that loops it with a real clock.
+// controller_step; this is the thin driver that loops it with a real clock. A
+// control server (see PROTOCOL.md) shares the controller under one mutex so
+// external clients can submit and inspect jobs without touching the queues.
 int main() {
   using namespace clusterrun;
   std::printf("clusterrun controller %s endpoint=%s\n", version(), localstack_endpoint().c_str());
@@ -27,9 +37,22 @@ int main() {
   LocalStackQueue queue;
   QueueNames names;
   Controller ctrl;
+  std::mutex mu;
+
+  ControlServer control(ctrl, mu, control_port());
+  if (!control.start()) {
+    std::fprintf(stderr, "failed to bind control port %u\n", control_port());
+    return 1;
+  }
+  std::printf("control endpoint on port %u\n", control.port());
+  std::fflush(stdout);
 
   while (true) {
-    bool worked = controller_step(ctrl, queue, names, now_us());
+    bool worked = false;
+    {
+      std::lock_guard<std::mutex> lk(mu);
+      worked = controller_step(ctrl, queue, names, now_us());
+    }
     if (!worked) {
       std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }

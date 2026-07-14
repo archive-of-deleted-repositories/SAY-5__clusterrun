@@ -21,6 +21,7 @@ add_library(clusterrun_controller_lib
   controller/controller.cpp
   controller/runtime.cpp
   controller/retry_classifier.cpp
+  controller/control_server.cpp
 )
 target_link_libraries(clusterrun_controller_lib PUBLIC clusterrun_core clusterrun_transport)
 
