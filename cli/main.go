@@ -23,6 +23,8 @@ commands:
   queue                   show queue depths
   watch <job-id>          poll a job to its terminal state
   fetch <job-id>          download and verify a result artifact
+  stats                   throughput, retries, and latency percentiles
+  drain-worker <id>       stop assigning new jobs to a worker
 
 The controller address comes from --controller or CRUN_CONTROLLER
 (default http://127.0.0.1:8447).
@@ -44,6 +46,10 @@ func main() {
 		code = cmdWatch(os.Args[2:])
 	case "fetch":
 		code = cmdFetch(os.Args[2:])
+	case "stats":
+		code = cmdStats(os.Args[2:])
+	case "drain-worker":
+		code = cmdDrainWorker(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		code = exitOK
