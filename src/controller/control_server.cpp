@@ -137,6 +137,10 @@ ControlResponse ControlServer::route(const std::string& method, const std::strin
     j["state"] = job_state_name(ctrl_.scheduler(), id, *st);
     j["attempts"] = st->attempts;
     j["attempts_max"] = st->job.attempts_max;
+    j["priority"] = to_string(st->job.priority);
+    if (!st->job.tenant.empty()) {
+      j["tenant"] = st->job.tenant;
+    }
     if (st->assigned_to.has_value()) {
       j["worker_id"] = *st->assigned_to;
     }
@@ -154,6 +158,11 @@ ControlResponse ControlServer::route(const std::string& method, const std::strin
     const Scheduler& sched = ctrl_.scheduler();
     json j;
     j["pending"] = sched.pending_count();
+    j["pending_by_priority"] = {
+        {"high", sched.pending_count(Priority::kHigh)},
+        {"normal", sched.pending_count(Priority::kNormal)},
+        {"low", sched.pending_count(Priority::kLow)},
+    };
     j["in_flight"] = sched.in_flight_count();
     j["done"] = sched.done_count();
     j["dead_lettered"] = sched.dlq_count();
