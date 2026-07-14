@@ -27,6 +27,8 @@ type jobSpec struct {
 	AttemptsMax        uint32      `json:"attempts_max"`
 	CheckpointInterval uint32      `json:"checkpoint_interval_s"`
 	IdempotencyKey     string      `json:"idempotency_key"`
+	Priority           string      `json:"priority"`
+	Tenant             string      `json:"tenant"`
 	ResumeFromCkpt     string      `json:"resume_from_checkpoint_s3,omitempty"`
 }
 
@@ -73,6 +75,9 @@ func TestJobGoldenRoundTrip(t *testing.T) {
 	roundTrip(t, mustGolden(t, "job.json"), &spec)
 	if spec.JobID != 42 || spec.Requires.NodeClass != "cpu-heavy" || spec.AttemptsMax != 3 {
 		t.Fatalf("unexpected decoded fields: %+v", spec)
+	}
+	if spec.Priority != "high" || spec.Tenant != "acme" {
+		t.Fatalf("priority fields drifted: %+v", spec)
 	}
 }
 

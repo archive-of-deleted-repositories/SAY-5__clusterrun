@@ -44,6 +44,8 @@ std::string encode_job(const Job& job) {
   j["attempts_max"] = job.attempts_max;
   j["checkpoint_interval_s"] = job.checkpoint_interval_s;
   j["idempotency_key"] = job.idempotency_key;
+  j["priority"] = to_string(job.priority);
+  j["tenant"] = job.tenant;
   if (!job.resume_from_checkpoint_s3.empty()) {
     j["resume_from_checkpoint_s3"] = job.resume_from_checkpoint_s3;
   }
@@ -131,6 +133,18 @@ std::optional<Job> decode_job(const std::string& text) {
       return std::nullopt;
     }
     job.idempotency_key = j.at("idempotency_key").get<std::string>();
+  }
+  if (j.contains("priority")) {
+    if (!j.at("priority").is_string() ||
+        !parse_priority(j.at("priority").get<std::string>(), &job.priority)) {
+      return std::nullopt;
+    }
+  }
+  if (j.contains("tenant")) {
+    if (!j.at("tenant").is_string()) {
+      return std::nullopt;
+    }
+    job.tenant = j.at("tenant").get<std::string>();
   }
   if (j.contains("resume_from_checkpoint_s3")) {
     if (!j.at("resume_from_checkpoint_s3").is_string()) {

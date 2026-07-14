@@ -28,6 +28,8 @@ Job sample_job() {
   job.attempts_max = 3;
   job.checkpoint_interval_s = 10;
   job.idempotency_key = "solve-1000000";
+  job.priority = Priority::kHigh;
+  job.tenant = "acme";
   job.resume_from_checkpoint_s3 = "s3://ck/42/10";
   return job;
 }

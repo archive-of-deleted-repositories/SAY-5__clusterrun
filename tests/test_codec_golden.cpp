@@ -44,6 +44,8 @@ TEST(CodecGolden, JobGoldenFieldsSurvive) {
   EXPECT_EQ(job->command.size(), 3u);
   EXPECT_EQ(job->reqs.node_class, "cpu-heavy");
   EXPECT_EQ(job->attempts_max, 3u);
+  EXPECT_EQ(job->priority, Priority::kHigh);
+  EXPECT_EQ(job->tenant, "acme");
   EXPECT_EQ(job->resume_from_checkpoint_s3, "s3://ck/42/10");
 }
 
