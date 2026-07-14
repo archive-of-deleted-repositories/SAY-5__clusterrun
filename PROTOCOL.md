@@ -47,7 +47,8 @@ Live state of a job. 404 for an unknown id.
 ```
 
 `worker_id`, `tenant`, `detail`, `category`, and `checkpoint` are present only
-when they have a value. `state` is one of:
+when they have a value. Once a result artifact has been uploaded, `artifact`
+(its URI) and `artifact_sha256` appear as well. `state` is one of:
 
 | state | meaning |
 |---|---|
@@ -58,6 +59,14 @@ when they have a value. `state` is one of:
 | `checkpointed` | running, with at least one checkpoint persisted |
 | `succeeded` | terminal success |
 | `dead_lettered` | terminal failure, no attempts left |
+
+### `GET /v1/jobs/{id}/result`
+
+Downloads the job's result artifact through the controller. The body is the
+raw artifact bytes (`application/octet-stream`) and the `X-Checksum-Sha256`
+header carries the checksum the worker computed at upload time, so a client
+can verify the download end to end. 404 if the job is unknown or has no
+artifact yet.
 
 ### `GET /v1/queue`
 
@@ -82,6 +91,20 @@ tenant). The scheduler drains the high band completely before normal, and
 normal before low. Within one band, tenants take turns in round-robin order so
 one tenant's burst cannot starve another. `crun submit --priority high` sets
 the field from the command line.
+
+## Result artifacts
+
+A job descriptor may set `"result_s3"` to an object URI. The worker then hands
+the child process a scratch path in `CLUSTERRUN_RESULT_FILE`; on a successful
+exit it uploads that file to the destination and reports its sha256 to the
+controller. A missing or unuploadable result file fails the attempt with the
+`upload-failure` category. `crun fetch <job-id>` downloads the artifact and
+refuses to write it if the checksum does not match.
+
+Artifacts live in the object store selected by `CLUSTERRUN_BACKEND` on the
+controller and workers: the S3-shaped store (LocalStack in development) by
+default, or a shared filesystem tree rooted at `CLUSTERRUN_FS_ROOT` when set
+to `local`.
 
 ## Error categories
 
@@ -111,6 +134,7 @@ job's terminal state so scripts can branch on the failure category:
 | 2 | usage error (bad flags, unreadable jobspec) |
 | 3 | controller unreachable or transport error |
 | 4 | watch timeout elapsed before the job finished |
+| 5 | fetched artifact failed checksum verification |
 | 20 | dead-lettered: `app-error` |
 | 21 | dead-lettered: `crash` |
 | 22 | dead-lettered: `oom` |
