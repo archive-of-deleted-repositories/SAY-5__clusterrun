@@ -28,6 +28,8 @@ struct JobState {
   Status last_status = Status::kClaimed;
   std::string latest_checkpoint_s3;  // most recent checkpoint key, if any
   std::string last_detail;           // detail of the most recent failure, if any
+  std::string result_uri;            // uploaded result artifact, if any
+  std::string result_sha256;         // its checksum, reported by the worker
 };
 
 // The scheduling core. Pure in-memory logic with no transport dependency so it

@@ -162,10 +162,22 @@ JobOutcome Scheduler::on_status(const StatusUpdate& u) {
         st.latest_checkpoint_s3 = u.detail;
       }
       return JobOutcome::kInProgress;
-    case Status::kSucceeded:
+    case Status::kSucceeded: {
       st.assigned_to.reset();
       ++done_;
+      // Success detail of the form "result: <uri> sha256:<hex>" records the
+      // uploaded artifact so clients can fetch and verify it.
+      const std::string kResult = "result: ";
+      const std::string kSha = " sha256:";
+      if (u.detail.rfind(kResult, 0) == 0) {
+        std::size_t sha = u.detail.rfind(kSha);
+        if (sha != std::string::npos && sha > kResult.size()) {
+          st.result_uri = u.detail.substr(kResult.size(), sha - kResult.size());
+          st.result_sha256 = u.detail.substr(sha + kSha.size());
+        }
+      }
       return JobOutcome::kDone;
+    }
     case Status::kFailed:
     case Status::kLost: {
       st.assigned_to.reset();
