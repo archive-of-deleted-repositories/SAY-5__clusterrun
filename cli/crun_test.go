@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,14 +38,28 @@ func TestExitCodeMap(t *testing.T) {
 }
 
 // stubController serves the slice of the control protocol the tests need: a
-// fixed job status that can be swapped mid-test, submits, and queue depths.
+// fixed job status that can be swapped mid-test, submits, queue depths, and
+// an artifact download.
 type stubController struct {
-	status atomic.Value // jobStatus
-	polls  atomic.Int64
+	status   atomic.Value // jobStatus
+	polls    atomic.Int64
+	artifact atomic.Value // []byte served from /v1/jobs/42/result
 }
 
 func (s *stubController) handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/jobs/42/result", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := s.artifact.Load().([]byte)
+		if body == nil {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `{"error": "no result artifact for this job"}`)
+			return
+		}
+		st := s.status.Load().(jobStatus)
+		w.Header().Set("X-Checksum-Sha256", st.ArtifactSha256)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(body)
+	})
 	mux.HandleFunc("GET /v1/jobs/42", func(w http.ResponseWriter, r *http.Request) {
 		s.polls.Add(1)
 		json.NewEncoder(w).Encode(s.status.Load().(jobStatus))
@@ -165,6 +182,51 @@ func TestWatchTimesOut(t *testing.T) {
 	_, c := newStub(t, jobStatus{JobID: 42, State: "running", AttemptsMax: 3})
 	if got := watchJob(c, 42, 20*time.Millisecond); got != exitTimeout {
 		t.Fatalf("watch of a stuck job = %d, want %d", got, exitTimeout)
+	}
+}
+
+func TestFetchVerifiesChecksum(t *testing.T) {
+	body := []byte("artifact payload")
+	sum := sha256.Sum256(body)
+	stub, c := newStub(t, jobStatus{
+		JobID: 42, State: "succeeded", Attempts: 1, AttemptsMax: 1,
+		Artifact: "s3://results/42.bin", ArtifactSha256: hex.EncodeToString(sum[:]),
+	})
+	stub.artifact.Store(body)
+
+	got, headerSum, err := c.fetchResult(42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(body) || headerSum != hex.EncodeToString(sum[:]) {
+		t.Fatalf("bad download: %q header %q", got, headerSum)
+	}
+
+	out := t.TempDir() + "/artifact.bin"
+	if code := cmdFetch([]string{"42", "--controller", c.base, "--output", out}); code != 0 {
+		t.Fatalf("fetch of a good artifact = %d, want 0", code)
+	}
+	written, err := os.ReadFile(out)
+	if err != nil || string(written) != string(body) {
+		t.Fatalf("written artifact drifted: %q %v", written, err)
+	}
+}
+
+func TestFetchRejectsCorruptedArtifact(t *testing.T) {
+	body := []byte("artifact payload")
+	sum := sha256.Sum256(body)
+	stub, c := newStub(t, jobStatus{
+		JobID: 42, State: "succeeded", Attempts: 1, AttemptsMax: 1,
+		Artifact: "s3://results/42.bin", ArtifactSha256: hex.EncodeToString(sum[:]),
+	})
+	stub.artifact.Store([]byte("tampered payload"))
+
+	out := t.TempDir() + "/artifact.bin"
+	if code := cmdFetch([]string{"42", "--controller", c.base, "--output", out}); code != exitChecksum {
+		t.Fatalf("fetch of a corrupted artifact = %d, want %d", code, exitChecksum)
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Fatal("corrupted artifact must not be written")
 	}
 }
 
