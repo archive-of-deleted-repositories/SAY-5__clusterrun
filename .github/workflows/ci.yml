@@ -196,3 +196,49 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: false
           tags: clusterrun:ci
+
+  go:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+      - name: Format check
+        run: test -z "$(gofmt -l cli)"
+      - name: Vet
+        run: cd cli && go vet ./...
+      - name: Test
+        run: cd cli && go test -race ./...
+
+  e2e-crun:
+    runs-on: ubuntu-24.04
+    services:
+      localstack:
+        image: localstack/localstack:3.5
+        ports: ["4566:4566"]
+        env:
+          SERVICES: sqs,s3
+        options: >-
+          --health-cmd "curl -sf http://localhost:4566/_localstack/health"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake libcurl4-openssl-dev nlohmann-json3-dev \
+            libgtest-dev libgmock-dev
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+      - name: Build controller and worker
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build -j"$(nproc)" --target clusterrun_controller clusterrun_worker
+      - name: Build crun
+        run: cd cli && go build -o ../build/crun .
+      - name: End to end through crun
+        run: ./scripts/e2e_crun.sh
