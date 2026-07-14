@@ -23,6 +23,7 @@ void Scheduler::remove_worker(WorkerId id) {
   for (auto& [jid, st] : jobs_) {
     if (st.assigned_to == id && st.last_status != Status::kSucceeded) {
       st.assigned_to.reset();
+      st.last_detail = "lost: worker went silent";
       pending_.push_back(jid);
     }
   }
@@ -133,6 +134,7 @@ JobOutcome Scheduler::on_status(const StatusUpdate& u) {
     case Status::kFailed:
     case Status::kLost: {
       st.assigned_to.reset();
+      st.last_detail = u.detail.empty() ? "lost: worker went silent" : u.detail;
       if (st.attempts < st.job.attempts_max) {
         pending_.push_back(u.job_id);
         return JobOutcome::kRedriven;

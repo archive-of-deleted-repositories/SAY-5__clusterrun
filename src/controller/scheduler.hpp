@@ -26,6 +26,7 @@ struct JobState {
   std::optional<WorkerId> assigned_to;  // worker currently holding it, if any
   Status last_status = Status::kClaimed;
   std::string latest_checkpoint_s3;  // most recent checkpoint key, if any
+  std::string last_detail;           // detail of the most recent failure, if any
 };
 
 // The scheduling core. Pure in-memory logic with no transport dependency so it

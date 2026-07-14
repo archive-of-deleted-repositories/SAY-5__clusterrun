@@ -75,3 +75,38 @@ TEST(RetryClassifier, DecisionTable) {
     EXPECT_EQ(classify_retry(row.result), row.expected) << row.label;
   }
 }
+
+// Categories mirror the retry policy: every non-success outcome lands in the
+// bucket the classifier would act on, and the token round-trips through a
+// worker-style "<category>: <message>" detail string.
+TEST(RetryClassifier, CategorizeMatchesPolicy) {
+  EXPECT_EQ(categorize(exited(3)), ErrorCategory::kAppError);
+  EXPECT_EQ(categorize(exited(0)), ErrorCategory::kNone);
+  EXPECT_EQ(categorize(signaled(SIGKILL)), ErrorCategory::kPreempted);
+  EXPECT_EQ(categorize(signaled(SIGTERM)), ErrorCategory::kPreempted);
+  EXPECT_EQ(categorize(signaled(SIGSEGV)), ErrorCategory::kCrash);
+
+  AttemptResult oom;
+  oom.oom_killed = true;
+  EXPECT_EQ(categorize(oom), ErrorCategory::kOom);
+
+  AttemptResult slow;
+  slow.deadline_exceeded = true;
+  EXPECT_EQ(categorize(slow), ErrorCategory::kDeadline);
+}
+
+TEST(RetryClassifier, CategoryTokenRoundTrip) {
+  const ErrorCategory cats[] = {
+      ErrorCategory::kAppError,      ErrorCategory::kCrash,    ErrorCategory::kOom,
+      ErrorCategory::kPreempted,     ErrorCategory::kDeadline, ErrorCategory::kSpawnFailure,
+      ErrorCategory::kUploadFailure, ErrorCategory::kLost,
+  };
+  for (ErrorCategory c : cats) {
+    std::string detail = std::string(to_string(c)) + ": something went wrong";
+    EXPECT_EQ(parse_category(detail), c) << to_string(c);
+  }
+  EXPECT_EQ(parse_category("unprefixed free text"), ErrorCategory::kNone);
+  EXPECT_EQ(parse_category(""), ErrorCategory::kNone);
+  // The token must lead; a category name mid-string does not count.
+  EXPECT_EQ(parse_category("saw an oom: maybe"), ErrorCategory::kNone);
+}

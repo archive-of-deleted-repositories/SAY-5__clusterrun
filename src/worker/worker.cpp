@@ -1,6 +1,7 @@
 #include "worker/worker.hpp"
 
 #include <chrono>
+#include <csignal>
 
 #include "core/job_codec.hpp"
 #include "transport/localstack.hpp"
@@ -55,25 +56,29 @@ Status execute_job(const Job& job, WorkerId worker_id, ObjectStore& store, const
 
   ExecResult r = run_process(job.command, extra_env);
   if (!r.spawned) {
-    sink(make_update(job, worker_id, Status::kFailed, 0, "fork/exec failed"));
+    sink(make_update(job, worker_id, Status::kFailed, 0, "spawn-failure: fork/exec failed"));
     return Status::kFailed;
   }
 
   bool uploaded = put_to_uri(store, job.stdout_s3, r.stdout_data) &&
                   put_to_uri(store, job.stderr_s3, r.stderr_data);
 
+  // Failure details lead with the ErrorCategory token (see retry_classifier.hpp)
+  // so the controller and external clients can bucket failures structurally.
   if (r.signaled) {
+    bool preempted = r.term_signal == SIGKILL || r.term_signal == SIGTERM;
+    std::string category = preempted ? "preempted" : "crash";
     sink(make_update(job, worker_id, Status::kFailed, 0,
-                     "terminated by signal " + std::to_string(r.term_signal)));
+                     category + ": terminated by signal " + std::to_string(r.term_signal)));
     return Status::kFailed;
   }
   if (r.exit_code != 0) {
     sink(make_update(job, worker_id, Status::kFailed, 0,
-                     "exit code " + std::to_string(r.exit_code)));
+                     "app-error: exit code " + std::to_string(r.exit_code)));
     return Status::kFailed;
   }
   if (!uploaded) {
-    sink(make_update(job, worker_id, Status::kFailed, 0, "output upload failed"));
+    sink(make_update(job, worker_id, Status::kFailed, 0, "upload-failure: output upload failed"));
     return Status::kFailed;
   }
   sink(make_update(job, worker_id, Status::kSucceeded, 100, ""));

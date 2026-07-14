@@ -32,4 +32,62 @@ RetryDecision classify_retry(const AttemptResult& r) {
   return RetryDecision::kDeadLetter;
 }
 
+const char* to_string(ErrorCategory c) {
+  switch (c) {
+    case ErrorCategory::kNone:
+      return "none";
+    case ErrorCategory::kAppError:
+      return "app-error";
+    case ErrorCategory::kCrash:
+      return "crash";
+    case ErrorCategory::kOom:
+      return "oom";
+    case ErrorCategory::kPreempted:
+      return "preempted";
+    case ErrorCategory::kDeadline:
+      return "deadline";
+    case ErrorCategory::kSpawnFailure:
+      return "spawn-failure";
+    case ErrorCategory::kUploadFailure:
+      return "upload-failure";
+    case ErrorCategory::kLost:
+      return "lost";
+  }
+  return "none";
+}
+
+ErrorCategory categorize(const AttemptResult& r) {
+  if (r.deadline_exceeded) {
+    return ErrorCategory::kDeadline;
+  }
+  if (r.oom_killed) {
+    return ErrorCategory::kOom;
+  }
+  if (r.term_signal != 0) {
+    if (r.term_signal == SIGKILL || r.term_signal == SIGTERM) {
+      return ErrorCategory::kPreempted;
+    }
+    return ErrorCategory::kCrash;
+  }
+  if (r.exit_code == 0) {
+    return ErrorCategory::kNone;
+  }
+  return ErrorCategory::kAppError;
+}
+
+ErrorCategory parse_category(const std::string& detail) {
+  static constexpr ErrorCategory kAll[] = {
+      ErrorCategory::kAppError,      ErrorCategory::kCrash,    ErrorCategory::kOom,
+      ErrorCategory::kPreempted,     ErrorCategory::kDeadline, ErrorCategory::kSpawnFailure,
+      ErrorCategory::kUploadFailure, ErrorCategory::kLost,
+  };
+  for (ErrorCategory c : kAll) {
+    std::string prefix = std::string(to_string(c)) + ":";
+    if (detail.rfind(prefix, 0) == 0) {
+      return c;
+    }
+  }
+  return ErrorCategory::kNone;
+}
+
 }  // namespace clusterrun
