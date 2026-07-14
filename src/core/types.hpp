@@ -19,6 +19,20 @@ struct Requirements {
   std::string node_class;             // "aws", "local", "gpu", "cpu-heavy", or ""
 };
 
+// Dispatch priority for a job. Within one priority band jobs are scheduled
+// fairly across tenants; a higher band always dispatches before a lower one.
+enum class Priority : std::uint8_t {
+  kLow = 0,
+  kNormal = 1,
+  kHigh = 2,
+};
+
+// Canonical lowercase token for a priority ("low", "normal", "high").
+const char* to_string(Priority p);
+
+// Parses a priority token. Returns false for anything else.
+bool parse_priority(const std::string& token, Priority* out);
+
 // A unit of work. command[0] is the executable; the remainder are arguments.
 struct Job {
   JobId job_id = 0;
@@ -29,6 +43,8 @@ struct Job {
   std::uint32_t attempts_max = 1;
   std::uint32_t checkpoint_interval_s = 0;  // 0 disables checkpointing
   std::string idempotency_key;
+  Priority priority = Priority::kNormal;
+  std::string tenant;  // fair-share bucket; empty means the default tenant
   // Set by the controller on redrive so a resuming worker can pick up state.
   std::string resume_from_checkpoint_s3;
 };
