@@ -43,9 +43,15 @@ seconds to hours and checkpointing is load-bearing.
   "requires": { "cpu_min": 4, "mem_gb_min": 8, "features": ["avx2"], "node_class": "cpu-heavy" },
   "attempts_max": 3,
   "checkpoint_interval_s": 10,
-  "idempotency_key": "solve-1000000"
+  "idempotency_key": "solve-1000000",
+  "priority": "high",
+  "tenant": "acme"
 }
 ```
+
+`priority` is `high`, `normal` (the default), or `low`; the scheduler drains a
+higher band completely before a lower one. `tenant` is a fair-share bucket:
+within one band, tenants take turns so a burst from one cannot starve another.
 
 ## Build
 
