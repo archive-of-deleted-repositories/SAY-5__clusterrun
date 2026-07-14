@@ -23,6 +23,7 @@ type jobSpec struct {
 	Command            []string    `json:"command"`
 	StdoutS3           string      `json:"stdout_s3"`
 	StderrS3           string      `json:"stderr_s3"`
+	ResultS3           string      `json:"result_s3"`
 	Requires           jobRequires `json:"requires"`
 	AttemptsMax        uint32      `json:"attempts_max"`
 	CheckpointInterval uint32      `json:"checkpoint_interval_s"`

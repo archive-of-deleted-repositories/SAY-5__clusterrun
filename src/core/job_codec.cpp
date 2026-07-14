@@ -35,6 +35,7 @@ std::string encode_job(const Job& job) {
   j["command"] = job.command;
   j["stdout_s3"] = job.stdout_s3;
   j["stderr_s3"] = job.stderr_s3;
+  j["result_s3"] = job.result_s3;
   j["requires"] = {
       {"cpu_min", job.reqs.cpu_min},
       {"mem_gb_min", job.reqs.mem_gb_min},
@@ -81,6 +82,13 @@ std::optional<Job> decode_job(const std::string& text) {
       return std::nullopt;
     }
     job.stderr_s3 = j.at("stderr_s3").get<std::string>();
+  }
+
+  if (j.contains("result_s3")) {
+    if (!j.at("result_s3").is_string()) {
+      return std::nullopt;
+    }
+    job.result_s3 = j.at("result_s3").get<std::string>();
   }
 
   if (j.contains("requires")) {

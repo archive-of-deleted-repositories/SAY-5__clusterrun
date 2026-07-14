@@ -39,6 +39,10 @@ struct Job {
   std::vector<std::string> command;
   std::string stdout_s3;
   std::string stderr_s3;
+  // Destination for a result artifact. When set, the worker hands the child
+  // process a scratch path in CLUSTERRUN_RESULT_FILE, uploads that file here
+  // on success, and reports its sha256 so clients can verify downloads.
+  std::string result_s3;
   Requirements reqs;  // JSON key is "requires"; field renamed to avoid the C++20 keyword.
   std::uint32_t attempts_max = 1;
   std::uint32_t checkpoint_interval_s = 0;  // 0 disables checkpointing

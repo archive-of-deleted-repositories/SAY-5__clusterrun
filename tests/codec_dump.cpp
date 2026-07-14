@@ -21,6 +21,7 @@ Job sample_job() {
   job.command = {"./solve", "--n", "1000000"};
   job.stdout_s3 = "s3://results/42.out";
   job.stderr_s3 = "s3://results/42.err";
+  job.result_s3 = "s3://results/42.bin";
   job.reqs.cpu_min = 4;
   job.reqs.mem_gb_min = 8;
   job.reqs.features = {"avx2"};
