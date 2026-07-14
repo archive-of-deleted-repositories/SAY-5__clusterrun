@@ -261,8 +261,10 @@ SchedulerStats Scheduler::stats() const {
   if (!latencies_us_.empty()) {
     std::vector<std::uint64_t> sorted = latencies_us_;
     std::sort(sorted.begin(), sorted.end());
-    s.latency_p50_us = sorted[(sorted.size() - 1) * 50 / 100];
-    s.latency_p95_us = sorted[(sorted.size() - 1) * 95 / 100];
+    // Nearest-rank percentiles, rounding up so p95 of a small sample set is
+    // pulled toward the slow tail rather than the median.
+    s.latency_p50_us = sorted[((sorted.size() - 1) * 50 + 99) / 100];
+    s.latency_p95_us = sorted[((sorted.size() - 1) * 95 + 99) / 100];
   }
   if (done_ > 0 && last_done_ts_us_ > first_claim_ts_us_ && first_claim_ts_us_ > 0) {
     double window_s = static_cast<double>(last_done_ts_us_ - first_claim_ts_us_) / 1e6;
