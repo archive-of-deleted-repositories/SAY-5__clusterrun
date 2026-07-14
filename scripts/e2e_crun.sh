@@ -35,7 +35,7 @@ curl -sf "$CRUN_CONTROLLER/v1/healthz"
 echo
 
 TMP=$(mktemp -d)
-printf '{"job_id":1,"command":["sh","-c","echo crun e2e"],"stdout_s3":"s3://results/e2e-1.out","attempts_max":2}' \
+printf '{"job_id":1,"command":["sh","-c","echo crun e2e; printf e2e-artifact-payload > \\"$CLUSTERRUN_RESULT_FILE\\""],"stdout_s3":"s3://results/e2e-1.out","result_s3":"s3://results/e2e-1.bin","attempts_max":2}' \
   > "$TMP/ok.json"
 printf '{"job_id":2,"command":["sh","-c","exit 3"],"attempts_max":1}' \
   > "$TMP/fail.json"
@@ -43,6 +43,13 @@ printf '{"job_id":2,"command":["sh","-c","exit 3"],"attempts_max":1}' \
 echo "submitting and watching a passing job"
 "$CRUN" submit "$TMP/ok.json" --backend local --max-retries 1
 "$CRUN" watch 1 --timeout 60
+
+echo "fetching and verifying the result artifact"
+"$CRUN" fetch 1 --output "$TMP/artifact.bin"
+if [[ "$(cat "$TMP/artifact.bin")" != "e2e-artifact-payload" ]]; then
+  echo "artifact content mismatch" >&2
+  exit 1
+fi
 
 echo "submitting a failing job: expecting app-error exit 20"
 "$CRUN" submit "$TMP/fail.json"
@@ -57,5 +64,33 @@ fi
 
 echo "queue after the run"
 "$CRUN" queue
+
+echo "restarting on the local filesystem backend"
+kill "$CTRL_PID" "$WORKER_PID" 2>/dev/null || true
+wait "$CTRL_PID" "$WORKER_PID" 2>/dev/null || true
+export CLUSTERRUN_BACKEND=local
+export CLUSTERRUN_FS_ROOT="$TMP/objects"
+PORT=$((PORT + 1))
+export CLUSTERRUN_CONTROL_PORT="$PORT"
+export CRUN_CONTROLLER="http://127.0.0.1:$PORT"
+"$CTRL" &
+CTRL_PID=$!
+CLUSTERRUN_WORKER_ID=1 CLUSTERRUN_CPU=8 CLUSTERRUN_MEM_GB=16 CLUSTERRUN_NODE_CLASS=local \
+  "$WORKER" &
+WORKER_PID=$!
+for _ in $(seq 1 30); do
+  if curl -sf "$CRUN_CONTROLLER/v1/healthz" >/dev/null; then break; fi
+  sleep 1
+done
+
+printf '{"job_id":11,"command":["sh","-c","printf fs-artifact-payload > \\"$CLUSTERRUN_RESULT_FILE\\""],"result_s3":"s3://results/e2e-11.bin","attempts_max":2}' \
+  > "$TMP/fs.json"
+"$CRUN" submit "$TMP/fs.json"
+"$CRUN" watch 11 --timeout 60
+"$CRUN" fetch 11 --output "$TMP/artifact-fs.bin"
+if [[ "$(cat "$TMP/artifact-fs.bin")" != "fs-artifact-payload" ]]; then
+  echo "filesystem-backend artifact mismatch" >&2
+  exit 1
+fi
 
 echo "e2e ok"
