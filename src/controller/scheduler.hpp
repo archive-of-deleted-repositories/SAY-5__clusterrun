@@ -5,6 +5,7 @@
 #include <deque>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,18 @@ struct JobState {
   std::string last_detail;           // detail of the most recent failure, if any
   std::string result_uri;            // uploaded result artifact, if any
   std::string result_sha256;         // its checksum, reported by the worker
+  std::uint64_t claimed_ts_us = 0;   // worker clock at the most recent claim
+};
+
+// A point-in-time snapshot of scheduler counters for the stats endpoint.
+struct SchedulerStats {
+  std::size_t submitted = 0;
+  std::size_t done = 0;
+  std::size_t dead_lettered = 0;
+  std::map<std::string, std::size_t> retries_by_category;
+  std::uint64_t latency_p50_us = 0;  // claim-to-success, worker clock
+  std::uint64_t latency_p95_us = 0;
+  double throughput_per_s = 0.0;  // completions over the active window
 };
 
 // The scheduling core. Pure in-memory logic with no transport dependency so it
@@ -50,6 +63,15 @@ class Scheduler {
   // Forgets a worker (for example after it is declared lost). Any job it held is
   // redriven on the next assign pass.
   void remove_worker(WorkerId id);
+
+  // Marks a worker as draining: it keeps whatever it is already running but is
+  // skipped for new assignments. Returns false for an unknown worker.
+  bool drain_worker(WorkerId id);
+
+  // Whether a worker is currently draining.
+  bool is_draining(WorkerId id) const {
+    return draining_.count(id) > 0;
+  }
 
   // Adds a fresh job to the pending set.
   void submit(const Job& job);
@@ -85,6 +107,10 @@ class Scheduler {
   // Looks up the live state of a job, or nullptr if unknown.
   const JobState* job_state(JobId id) const;
 
+  // Aggregated counters: throughput, retries by failure category, and
+  // claim-to-success latency percentiles.
+  SchedulerStats stats() const;
+
  private:
   // One priority band: a queue per tenant plus the round-robin turn order.
   // Invariant: a tenant is in rotation exactly once iff its queue is non-empty.
@@ -113,6 +139,12 @@ class Scheduler {
   std::size_t done_ = 0;
   std::size_t dlq_ = 0;
   std::vector<JobId> dead_letters_;
+  std::set<WorkerId> draining_;  // skipped by pick_worker, keep current jobs
+  std::size_t submitted_ = 0;
+  std::map<std::string, std::size_t> retries_by_category_;
+  std::vector<std::uint64_t> latencies_us_;  // claim-to-success samples
+  std::uint64_t first_claim_ts_us_ = 0;
+  std::uint64_t last_done_ts_us_ = 0;
 };
 
 }  // namespace clusterrun
