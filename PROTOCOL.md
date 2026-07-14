@@ -37,6 +37,8 @@ Live state of a job. 404 for an unknown id.
   "state": "running",
   "attempts": 1,
   "attempts_max": 3,
+  "priority": "high",
+  "tenant": "acme",
   "worker_id": 7,
   "detail": "app-error: exit code 3",
   "category": "app-error",
@@ -44,8 +46,8 @@ Live state of a job. 404 for an unknown id.
 }
 ```
 
-`worker_id`, `detail`, `category`, and `checkpoint` are present only when they
-have a value. `state` is one of:
+`worker_id`, `tenant`, `detail`, `category`, and `checkpoint` are present only
+when they have a value. `state` is one of:
 
 | state | meaning |
 |---|---|
@@ -64,12 +66,22 @@ Queue depths.
 ```json
 {
   "pending": 3,
+  "pending_by_priority": {"high": 1, "normal": 2, "low": 0},
   "in_flight": 2,
   "done": 40,
   "dead_lettered": 1,
   "waiting": {"9": "no worker satisfies feature:gpu"}
 }
 ```
+
+## Priorities and fair queues
+
+A job descriptor may carry `"priority"` (`high`, `normal`, or `low`; the
+default is `normal`) and `"tenant"` (any string; empty means the default
+tenant). The scheduler drains the high band completely before normal, and
+normal before low. Within one band, tenants take turns in round-robin order so
+one tenant's burst cannot starve another. `crun submit --priority high` sets
+the field from the command line.
 
 ## Error categories
 
